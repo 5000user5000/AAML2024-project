@@ -10,6 +10,7 @@
 #include "cfu.h"
 
 
+
 //#include "playground_util/print_params.h"
 
 namespace tflite {
@@ -24,8 +25,8 @@ inline void ConvPerChannel(
     const int32_t* bias_data, const RuntimeShape& output_shape,
     int8_t* output_data) {
   
-   perf_enable_counter(6);
-
+  //  perf_enable_counter(6);
+  
   // 获取参数
   const int32_t input_offset = params.input_offset;
   const int stride_width = params.stride_width;
@@ -65,26 +66,30 @@ inline void ConvPerChannel(
   const int output_height = output_shape.Dims(1);
   const int output_width = output_shape.Dims(2);
 
+  // perf_enable_counter(5);
   // 定义 im2col 和 fr2row 数组
   int8_t im2col[1024][1024]; // 根据需要调整大小
   int8_t fr2row[1024][1024];
 
   // 初始化 im2col
-  for(int i = 0; i < 1024; i++)
-    for(int j = 0; j < 1024; j++)
-      im2col[i][j] = -input_offset;
+  // for(int i = 0; i < 1024; i++)
+  //   for(int j = 0; j < 1024; j++)
+  //     im2col[i][j] = -input_offset;
   
   // memset(im2col, -input_offset, sizeof(im2col));
 
 
-  // 初始化 fr2row
-  for(int i = 0; i < 1024; i++)
-    for(int j = 0; j < 1024; j++)
-      fr2row[i][j] = 0;
+  // // 初始化 fr2row
+  // for(int i = 0; i < 1024; i++)
+  //   for(int j = 0; j < 1024; j++)
+  //     fr2row[i][j] = 0;
 
   int row_index = 0;
   int col_index = 0;
 
+  // perf_disable_counter(5);
+
+  // perf_enable_counter(0);
   // 图像转换为列
   for (int out_y = 0; out_y < output_height; ++out_y) {
     const int in_y_origin = (out_y * stride_height) - pad_height;
@@ -100,11 +105,15 @@ inline void ConvPerChannel(
               col_index = filter_height * filter_width * in_channel + filter_y * filter_width + filter_x;
               if(is_point_inside_image)
                 im2col[row_index][col_index] = *((int8_t *)(input_data + Offset(input_shape, 0, in_y, in_x, in_channel)));
+              else
+                im2col[row_index][col_index] = -input_offset;
             }
           }
       }
     }
   }
+  // perf_disable_counter(0);
+  // perf_enable_counter(1);
 
   // 滤波器转换为行
   for (int out_channel = 0; out_channel < output_depth; ++out_channel) {
@@ -118,6 +127,8 @@ inline void ConvPerChannel(
       }
     }
   }
+  // perf_disable_counter(1);
+  // perf_enable_counter(2);
 
   // 重置 CFU
   cfu_op0(1, 0, 0);
@@ -135,6 +146,8 @@ inline void ConvPerChannel(
   cfu_op0(4,4,0);
   cfu_op0(6,4,0);
 
+  // perf_disable_counter(2);
+  // perf_enable_counter(3);
   // printf("output_depth: %d\n", output_depth);
   for(int out_channel = 0; out_channel < output_depth; out_channel += 4){
     // 加载缓冲区 B
@@ -335,7 +348,8 @@ inline void ConvPerChannel(
       if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
     }  
   }
-  perf_disable_counter(6);
+  // perf_disable_counter(3);
+  // perf_disable_counter(6);
 }
 
 
