@@ -10,7 +10,6 @@
 #include "cfu.h"
 
 
-
 //#include "playground_util/print_params.h"
 
 namespace tflite {
@@ -116,17 +115,36 @@ inline void ConvPerChannel(
   // perf_enable_counter(1);
 
   // 滤波器转换为行
-  for (int out_channel = 0; out_channel < output_depth; ++out_channel) {
+for (int out_channel = 0; out_channel < output_depth; ++out_channel) {
     for (int filter_y = 0; filter_y < filter_height; ++filter_y) {
-      for (int filter_x = 0; filter_x < filter_width; ++filter_x) {
-        for (int in_channel = 0; in_channel < filter_input_depth; ++in_channel) {
-          row_index = filter_height * filter_width * in_channel + filter_y * filter_width + filter_x;
-          col_index = out_channel;
-          fr2row[row_index][col_index] = *((int8_t *)(filter_data + Offset(filter_shape, out_channel, filter_y, filter_x, in_channel)));
+        for (int filter_x = 0; filter_x < filter_width; ++filter_x) {
+            // 假設 filter_input_depth 已知為 4 的倍數
+            int in_channel = 0;
+            for (; in_channel <= filter_input_depth - 4; in_channel += 4) {
+                // 預先計算一次共用的 row_index
+                int common_row_index_0 = filter_height * filter_width * in_channel + filter_y * filter_width + filter_x;
+                int common_row_index_1 = common_row_index_0 + (filter_height * filter_width); // in_channel + 1
+                int common_row_index_2 = common_row_index_1 + (filter_height * filter_width); // in_channel + 2
+                int common_row_index_3 = common_row_index_2 + (filter_height * filter_width); // in_channel + 3
+                int common_col_index = out_channel;
+
+                // 連續讀取 4 個 in_channel
+                fr2row[common_row_index_0][common_col_index] = *((int8_t*)(filter_data + Offset(filter_shape, out_channel, filter_y, filter_x, in_channel)));
+                fr2row[common_row_index_1][common_col_index] = *((int8_t*)(filter_data + Offset(filter_shape, out_channel, filter_y, filter_x, in_channel + 1)));
+                fr2row[common_row_index_2][common_col_index] = *((int8_t*)(filter_data + Offset(filter_shape, out_channel, filter_y, filter_x, in_channel + 2)));
+                fr2row[common_row_index_3][common_col_index] = *((int8_t*)(filter_data + Offset(filter_shape, out_channel, filter_y, filter_x, in_channel + 3)));
+            }
+
+            // 對於不滿 4 的餘數部分再處理一次
+            for (; in_channel < filter_input_depth; ++in_channel) {
+                 row_index = filter_height * filter_width * in_channel + filter_y * filter_width + filter_x;
+                 col_index = out_channel;
+                fr2row[row_index][col_index] = *((int8_t*)(filter_data + Offset(filter_shape, out_channel, filter_y, filter_x, in_channel)));
+            }
         }
-      }
     }
-  }
+}
+
   // perf_disable_counter(1);
   // perf_enable_counter(2);
 
