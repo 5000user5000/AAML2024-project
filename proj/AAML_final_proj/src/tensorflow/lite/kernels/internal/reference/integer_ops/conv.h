@@ -6,9 +6,9 @@
 #include "tensorflow/lite/kernels/internal/common.h"
 #include "tensorflow/lite/kernels/internal/portable_tensor_utils.h"
 
-#include "perf.h"
+// #include "perf.h"
 #include "cfu.h"
-#include "cstdio"
+// #include "cstdio"
 
 //#include "playground_util/print_params.h"
 
@@ -24,7 +24,7 @@ inline void ConvPerChannel(
     const int32_t* bias_data, const RuntimeShape& output_shape,
     int8_t* output_data) {
   
-   perf_enable_counter(6);
+  //  perf_enable_counter(6);
   
   // 获取参数
   const int32_t input_offset = params.input_offset;
@@ -294,7 +294,7 @@ for (int out_channel = 0; out_channel < output_depth; ++out_channel) {
     }
   }
   // perf_disable_counter(3);
-  perf_disable_counter(6);
+  // perf_disable_counter(6);
 }
 
 

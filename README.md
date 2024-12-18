@@ -1,3 +1,20 @@
+# AAML Final Project Documentation
+
+The detailed information and resources for our **Final Project** are available in the following file:
+
+[📂 /proj/AAML_final_proj/README.md](./proj/AAML_final_proj/README.md)
+
+## How to Access
+
+1. Click the link above to navigate to the `/proj/AAML_final_proj` directory.
+2. Review the available documentation, source code, and resources relevant to the Final Project.
+3. Follow the provided instructions in the directory for further steps.
+
+For any questions or clarifications, feel free to reach out to the project maintainers or refer to the documentation within the `/proj/AAML_final_proj` directory.
+
+---
+
+
 # CFU Playground
 
 Want a faster ML processor?   Do it yourself!
