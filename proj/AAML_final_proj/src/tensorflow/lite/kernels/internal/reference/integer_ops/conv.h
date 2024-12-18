@@ -8,7 +8,7 @@
 
 #include "perf.h"
 #include "cfu.h"
-
+#include "cstdio"
 
 //#include "playground_util/print_params.h"
 
@@ -24,7 +24,7 @@ inline void ConvPerChannel(
     const int32_t* bias_data, const RuntimeShape& output_shape,
     int8_t* output_data) {
   
-  //  perf_enable_counter(6);
+   perf_enable_counter(6);
   
   // 获取参数
   const int32_t input_offset = params.input_offset;
@@ -36,11 +36,22 @@ inline void ConvPerChannel(
   const int pad_height = params.padding_values.height;
   const int32_t output_offset = params.output_offset;
   
+  // printf("input_offset: %ld\n", input_offset);
+  // printf("stride_width: %d\n", stride_width);
+  // printf("stride_height: %d\n", stride_height);
+  // printf("dilation_width_factor: %d\n", dilation_width_factor);
+  // printf("dilation_height_factor: %d\n", dilation_height_factor);
+  // printf("pad_width: %d\n", pad_width);
+  // printf("pad_height: %d\n", pad_height);
+  // printf("output_offset: %ld\n", output_offset);
 
 
   // 设置输出的最小值和最大值
   const int32_t output_activation_min = params.quantized_activation_min;
   const int32_t output_activation_max = params.quantized_activation_max;
+
+  // printf("output_activation_min: %ld\n", output_activation_min);
+  // printf("output_activation_max: %ld\n", output_activation_max);
 
   // 一致性检查
   TFLITE_DCHECK_LE(output_activation_min, output_activation_max);
@@ -64,6 +75,17 @@ inline void ConvPerChannel(
   // const int filters_per_group = output_depth / groups;
   const int output_height = output_shape.Dims(1);
   const int output_width = output_shape.Dims(2);
+
+  // printf("input_height: %d\n", input_height);
+  // printf("input_width: %d\n", input_width);
+  // printf("input_depth: %d\n", input_depth);
+  // printf("filter_height: %d\n", filter_height);
+  // printf("filter_width: %d\n", filter_width);
+  // printf("filter_input_depth: %d\n", filter_input_depth);
+  // printf("output_height: %d\n", output_height);
+  // printf("output_width: %d\n", output_width);
+  // printf("output_depth: %d\n", output_depth);
+
 
   // perf_enable_counter(5);
   // 定义 im2col 和 fr2row 数组
@@ -145,6 +167,7 @@ for (int out_channel = 0; out_channel < output_depth; ++out_channel) {
     }
 }
 
+
   // perf_disable_counter(1);
   // perf_enable_counter(2);
 
@@ -161,7 +184,7 @@ for (int out_channel = 0; out_channel < output_depth; ++out_channel) {
   const int M = output_height * output_width;
   const int index_bound = M*N;
   cfu_op0(2, K, 0);
-  cfu_op0(4,4,0);
+  cfu_op0(4,8,0);
   cfu_op0(6,4,0);
 
   // perf_disable_counter(2);
@@ -185,18 +208,30 @@ for (int out_channel = 0; out_channel < output_depth; ++out_channel) {
       // printf("Set Buffer B set = %lx \t\taddr: %x, \t\tout: %lX\n", in_b , kk, ret2);
     }
 
-    for(int slide = 0; slide < output_height * output_width; slide += 4){
+    for(int slide = 0; slide < output_height * output_width; slide += 8){
       // 加载缓冲区 A
       for(int kk = 0; kk < K; kk++){
         uint8_t a[4] = {0, 0, 0, 0};
+        uint8_t a1[4] = {0, 0, 0, 0};
+        // uint8_t a2[4] = {0, 0, 0, 0};
+        // uint8_t a3[4] = {0, 0, 0, 0};
         for (int s = 0; s < 4; ++s){
           a[s] = im2col[slide + s][kk];
+          a1[s] = im2col[slide + 4 + s][kk];
+          // a2[s] = im2col[slide + 8 + s][kk];
+          // a3[s] = im2col[slide + 12 + s][kk];
         }
         // printf("a: %x %x %x %x\n", a[0], a[1], a[2], a[3]);
         uint32_t in_a = ((a[0] << 24) | (a[1] << 16) | (a[2] << 8) | a[3]);
+        uint32_t in_a1 = ((a1[0] << 24) | (a1[1] << 16) | (a1[2] << 8) | a1[3]);
+        // uint32_t in_a2 = ((a2[0] << 24) | (a2[1] << 16) | (a2[2] << 8) | a2[3]);
+        // uint32_t in_a3 = ((a3[0] << 24) | (a3[1] << 16) | (a3[2] << 8) | a3[3]);
 
         // 写入全局缓冲区 A
         cfu_op0(8, kk, in_a);
+        cfu_op0(8, kk + K, in_a1);
+        // cfu_op0(8, kk + 2*K, in_a2);
+        // cfu_op0(8, kk + 3*K, in_a3);
 
         // int32_t ret = cfu_op0(9, kk, 0);
         // printf("Set Buffer A = %lx , \t\taddr: %x, \t\tout: %lX\n", in_a , kk, ret);
@@ -205,169 +240,61 @@ for (int out_channel = 0; out_channel < output_depth; ++out_channel) {
       // 启动 CFU
       cfu_op0(12, 0, 0);
 
-      // case (s=0, c=0)
-      int32_t acc_value = cfu_op0(17, 0, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 0];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 0], output_shift[out_channel + 0]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      int output_index = Offset(output_shape, 0, (slide + 0) / output_width, (slide + 0) % output_width, out_channel + 0);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
+      int tmp_slide = slide;
+      for (int s = 0; s < 8; ++s) {
+        // 每個通道對應固定的數值直接寫入
+        int32_t acc_value = cfu_op0(17, s, 0);
+        if (bias_data) acc_value += bias_data[out_channel + 0];
+        acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 0], output_shift[out_channel + 0]);
+        acc_value += output_offset;
+        acc_value = std::max(acc_value, output_activation_min);
+        acc_value = std::min(acc_value, output_activation_max);
+        int output_index = Offset(output_shape, 0, (tmp_slide + s%4) / output_width, (tmp_slide + s%4) % output_width, out_channel + 0);
+        if (output_index < index_bound) {
+            output_data[output_index] = static_cast<int8_t>(acc_value);
+        }
 
-      // case (s=0, c=1)
-      acc_value = cfu_op0(16, 0, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 1];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 1], output_shift[out_channel + 1]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      output_index = Offset(output_shape, 0, (slide + 0) / output_width, (slide + 0) % output_width, out_channel + 1);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
+        acc_value = cfu_op0(16, s, 0);
+        if (bias_data) acc_value += bias_data[out_channel + 1];
+        acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 1], output_shift[out_channel + 1]);
+        acc_value += output_offset;
+        acc_value = std::max(acc_value, output_activation_min);
+        acc_value = std::min(acc_value, output_activation_max);
+        output_index = Offset(output_shape, 0, (tmp_slide + s%4) / output_width, (tmp_slide + s%4) % output_width, out_channel + 1);
+        if (output_index < index_bound) {
+            output_data[output_index] = static_cast<int8_t>(acc_value);
+        }
 
-      // case (s=0, c=2)
-      acc_value = cfu_op0(15, 0, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 2];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 2], output_shift[out_channel + 2]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      output_index = Offset(output_shape, 0, (slide + 0) / output_width, (slide + 0) % output_width, out_channel + 2);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
+        acc_value = cfu_op0(15, s, 0);
+        if (bias_data) acc_value += bias_data[out_channel + 2];
+        acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 2], output_shift[out_channel + 2]);
+        acc_value += output_offset;
+        acc_value = std::max(acc_value, output_activation_min);
+        acc_value = std::min(acc_value, output_activation_max);
+        output_index = Offset(output_shape, 0, (tmp_slide + s%4) / output_width, (tmp_slide + s%4) % output_width, out_channel + 2);
+        if (output_index < index_bound) {
+            output_data[output_index] = static_cast<int8_t>(acc_value);
+        }
 
-      // case (s=0, c=3)
-      acc_value = cfu_op0(14, 0, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 3];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 3], output_shift[out_channel + 3]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      output_index = Offset(output_shape, 0, (slide + 0) / output_width, (slide + 0) % output_width, out_channel + 3);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
+        acc_value = cfu_op0(14, s, 0);
+        if (bias_data) acc_value += bias_data[out_channel + 3];
+        acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 3], output_shift[out_channel + 3]);
+        acc_value += output_offset;
+        acc_value = std::max(acc_value, output_activation_min);
+        acc_value = std::min(acc_value, output_activation_max);
+        output_index = Offset(output_shape, 0, (tmp_slide + s%4) / output_width, (tmp_slide + s%4) % output_width, out_channel + 3);
+        if (output_index < index_bound) {
+            output_data[output_index] = static_cast<int8_t>(acc_value);
+        }
 
-      // case (s=1, c=0)
-      acc_value = cfu_op0(17, 1, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 0];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 0], output_shift[out_channel + 0]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      output_index = Offset(output_shape, 0, (slide + 1) / output_width, (slide + 1) % output_width, out_channel + 0);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
+        if(s%4 == 3) tmp_slide += 4;
+      }
 
-      // case (s=1, c=1)
-      acc_value = cfu_op0(16, 1, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 1];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 1], output_shift[out_channel + 1]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      output_index = Offset(output_shape, 0, (slide + 1) / output_width, (slide + 1) % output_width, out_channel + 1);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
 
-      // case (s=1, c=2)
-      acc_value = cfu_op0(15, 1, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 2];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 2], output_shift[out_channel + 2]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      output_index = Offset(output_shape, 0, (slide + 1) / output_width, (slide + 1) % output_width, out_channel + 2);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
-
-      // case (s=1, c=3)
-      acc_value = cfu_op0(14, 1, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 3];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 3], output_shift[out_channel + 3]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      output_index = Offset(output_shape, 0, (slide + 1) / output_width, (slide + 1) % output_width, out_channel + 3);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
-
-      // case (s=2, c=0)
-      acc_value = cfu_op0(17, 2, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 0];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 0], output_shift[out_channel + 0]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      output_index = Offset(output_shape, 0, (slide + 2) / output_width, (slide + 2) % output_width, out_channel + 0);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
-
-      // case (s=2, c=1)
-      acc_value = cfu_op0(16, 2, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 1];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 1], output_shift[out_channel + 1]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      output_index = Offset(output_shape, 0, (slide + 2) / output_width, (slide + 2) % output_width, out_channel + 1);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
-
-      // case (s=2, c=2)
-      acc_value = cfu_op0(15, 2, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 2];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 2], output_shift[out_channel + 2]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      output_index = Offset(output_shape, 0, (slide + 2) / output_width, (slide + 2) % output_width, out_channel + 2);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
-
-      // case (s=2, c=3)
-      acc_value = cfu_op0(14, 2, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 3];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 3], output_shift[out_channel + 3]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      output_index = Offset(output_shape, 0, (slide + 2) / output_width, (slide + 2) % output_width, out_channel + 3);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
-
-      // case (s=3, c=0)
-      acc_value = cfu_op0(17, 3, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 0];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 0], output_shift[out_channel + 0]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      output_index = Offset(output_shape, 0, (slide + 3) / output_width, (slide + 3) % output_width, out_channel + 0);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
-
-      // case (s=3, c=1)
-      acc_value = cfu_op0(16, 3, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 1];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 1], output_shift[out_channel + 1]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      output_index = Offset(output_shape, 0, (slide + 3) / output_width, (slide + 3) % output_width, out_channel + 1);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
-
-      // case (s=3, c=2)
-      acc_value = cfu_op0(15, 3, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 2];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 2], output_shift[out_channel + 2]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      output_index = Offset(output_shape, 0, (slide + 3) / output_width, (slide + 3) % output_width, out_channel + 2);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
-
-      // case (s=3, c=3)
-      acc_value = cfu_op0(14, 3, 0);
-      if (bias_data) acc_value += bias_data[out_channel + 3];
-      acc_value = MultiplyByQuantizedMultiplier(acc_value, output_multiplier[out_channel + 3], output_shift[out_channel + 3]);
-      acc_value += output_offset;
-      acc_value = std::max(acc_value, output_activation_min);
-      acc_value = std::min(acc_value, output_activation_max);
-      output_index = Offset(output_shape, 0, (slide + 3) / output_width, (slide + 3) % output_width, out_channel + 3);
-      if (output_index < index_bound) output_data[output_index] = static_cast<int8_t>(acc_value);
-    }  
+    }
   }
   // perf_disable_counter(3);
-  // perf_disable_counter(6);
+  perf_disable_counter(6);
 }
 
 
