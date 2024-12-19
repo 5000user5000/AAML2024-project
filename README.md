@@ -1,13 +1,17 @@
-# AAML Final Project Documentation
+# AAML Final Project Documentation (Group 11)
 
 The detailed information and resources for our **Final Project** are available in the following file:
 
 [📂 /proj/AAML_final_proj/README.md](./proj/AAML_final_proj/README.md)
 
+p.s. use  `make prog EXTRA_LITEX_ARGS="--cpu-variant=perf+cfu"` instead of `make prog`
+
+(Must read the readme in `/proj/AAML_final_proj` before testing!)
+
 ## How to Access
 
 1. Click the link above to navigate to the `/proj/AAML_final_proj` directory.
-2. Review the available documentation, source code, and resources relevant to the Final Project.
+2. Review the available documentation, source code, and resources relevant to the Final Project. 
 3. Follow the provided instructions in the directory for further steps.
 
 For any questions or clarifications, feel free to reach out to the project maintainers or refer to the documentation within the `/proj/AAML_final_proj` directory.
